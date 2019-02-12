@@ -1,5 +1,5 @@
 //	从初始化gin的web环境，加载static资源和template资源
-package owrvsutils
+package cogutils
 
 import (
 	// "flag"
@@ -9,18 +9,32 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 )
 
-var ZdbcWebRouter *gin.Engine = gin.Default()
+type WebginHelper struct {
+	ZdbcWebRouter *gin.Engine
+	initFuncMap   map[string][]func(*gin.RouterGroup)
+	upgrader      websocket.Upgrader
+}
 
-var initFuncMap = make(map[string][]func(*gin.RouterGroup))
+func NewWebginHelper() *WebginHelper {
+	w := WebginHelper{
+		ZdbcWebRouter: gin.Default(),
+		initFuncMap:   make(map[string][]func(*gin.RouterGroup)),
+	}
+	if Args.WEB_SOCKET.Enabled {
+		w.upgrader = websocket.Upgrader{}
+	}
+	return &w
+}
 
 //	注册web处理函数
 //	示例如下：
 // func init() {
 // 	RegisterInitFunc("/if", initIndexFunc)
 // }
-
+//
 // func initIndexFunc(router *gin.RouterGroup) {
 // 	router.GET("/", func(c *gin.Context) {
 // 		c.HTML(http.StatusOK, "index.tmpl", gin.H{
@@ -28,35 +42,71 @@ var initFuncMap = make(map[string][]func(*gin.RouterGroup))
 // 		})
 // 	})
 // }
-func RegisterInitFunc(path string, f func(*gin.RouterGroup)) {
+//
+//
+// func init() {
+//		websocket
+// 	RegisterInitFunc("/if", true, initIndexFunc)
+// }
+//
+// func initIndexFunc(router *gin.RouterGroup) {
+// 	router.GET("/", func(c *gin.Context) {
+//		//升级get请求为webSocket协议
+// 		ws, err := upGrader.Upgrade(c.Writer, c.Request, nil)
+// 		if err != nil {
+//			return
+//		}
+//		defer ws.Close()
+//		for {
+//		//读取ws中的数据
+//		mt, message, err := ws.ReadMessage()
+//		if err != nil {
+//			break
+//		}
+//		if string(message) == "ping" {
+//			message = []byte("pong")
+//		}
+//		//写入ws数据
+//		err = ws.WriteMessage(mt, message)
+//		if err != nil {
+//			break
+//		}
+// 	}
+// }
+//
+func (w *WebginHelper) RegisterInitFunc(path string, f func(*gin.RouterGroup)) {
+	w.RegisterInitFunc1(path, false, f)
+}
+
+func (w *WebginHelper) RegisterInitFunc1(path string, isWebsocket bool, f func(*gin.RouterGroup)) {
 	log.Println("RegisterInitFunc ", path, f)
-	var oldList, _ = initFuncMap[path]
+	var oldList, _ = w.initFuncMap[path]
 	oldList = append(oldList, f)
-	initFuncMap[path] = oldList
+	w.initFuncMap[path] = oldList
 }
 
 func init() {
 	if strings.EqualFold(Args.WEB.TEMPLATE_NAME, "gin") {
-		log.Println("init gin web.")
+		log.Println("init webgin module.")
 	}
 }
 
-func InitWeb() {
-	ZdbcWebRouter.Static("/ui", Args.HTTPS.Static_Path)
-	loadAllTemplatesFromPath(Args.HTTPS.Template_Path)
-	for path, fList := range initFuncMap {
-		var router = ZdbcWebRouter.Group(path)
+func (w *WebginHelper) InitHttp() {
+	w.ZdbcWebRouter.Static("/ui", Args.HTTPS.Static_Path)
+	w.loadAllTemplatesFromPath(Args.HTTPS.Template_Path)
+	for path, fList := range w.initFuncMap {
+		var router = w.ZdbcWebRouter.Group(path)
 		for _, f := range fList {
 			f(router)
 		}
 	}
 }
 
-func StartWebListen() {
-	ZdbcWebRouter.RunTLS(Args.HTTPS.Addr, Args.HTTPS.Cert_File, Args.HTTPS.Private_Pem_File)
+func (w *WebginHelper) StartWebListen() {
+	w.ZdbcWebRouter.RunTLS(Args.HTTPS.Addr, Args.HTTPS.Cert_File, Args.HTTPS.Private_Pem_File)
 }
 
-func loadAllTemplatesFromPath(templateBaseDir string) error {
+func (w *WebginHelper) loadAllTemplatesFromPath(templateBaseDir string) error {
 	var f, err = os.OpenFile(templateBaseDir, os.O_RDONLY, os.ModeAppend)
 	if err != nil {
 		log.Println("Cann't open the file."+templateBaseDir+", err is ", err)
@@ -75,14 +125,14 @@ func loadAllTemplatesFromPath(templateBaseDir string) error {
 			return err
 		}
 		for _, subdir := range subDirFileInfoList {
-			var err = loadAllTemplatesFromPath(templateBaseDir + string(os.PathSeparator) + subdir.Name())
+			var err = w.loadAllTemplatesFromPath(templateBaseDir + string(os.PathSeparator) + subdir.Name())
 			if err != nil {
 				return err
 			}
 		}
 	} else if strings.HasSuffix(templateBaseDir, ".tmpl") {
 		log.Println("LoadHTMLFiles ", templateBaseDir)
-		ZdbcWebRouter.LoadHTMLFiles(templateBaseDir)
+		w.ZdbcWebRouter.LoadHTMLFiles(templateBaseDir)
 	}
 	return nil
 }

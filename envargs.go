@@ -1,5 +1,5 @@
 //	从环境变量中初始化运行参数
-package owrvsutils
+package cogutils
 
 import (
 	"log"
@@ -15,6 +15,10 @@ type StarterArgs struct {
 		Private_Pem_File string `default:"./private.pem"`
 		Cert_File        string `default:"./file.crt"`
 	}
+	WEB_SOCKET struct {
+		Enabled bool   `default:"true"`
+		Path    string `default:"/ws"`
+	}
 	WEB struct {
 		TEMPLATE_NAME string `default:"gin"`
 	}
@@ -23,6 +27,7 @@ type StarterArgs struct {
 var Args StarterArgs
 
 func init() {
+	log.Println("init envargs module.")
 	env.Fill(&Args)
 	log.Println("EnvArgs is ", Args)
 }
